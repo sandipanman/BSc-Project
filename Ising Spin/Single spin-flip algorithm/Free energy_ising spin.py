@@ -5,12 +5,6 @@ Created on Mon Mar  9 12:50:16 2020
 @author: Sandipan
 """
 
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Mar  2 15:37:16 2020
-
-@author: Sandipan
-"""
 
 
 import numpy as np
@@ -31,14 +25,14 @@ def magnetisation(spin_states,size):
     return np.sum(spin_states)/size**2
 
 def U(spin_states,size,x,y,H,m):
-    return spin_states[x,y]*(find_neighbours(spin_states,size,x,y))-H*(np.sum(spin_states))+Q*(m**2)
+    return spin_states[x,y]*(find_neighbours(spin_states,size,x,y))-H*(np.sum(spin_states))+Q*((m)**2)
 
 #------------------Simulation Parameters--------------------
-Q=30
+Q=0
 size=5
-steps=50
+steps=10
 H=0
-max_trials=100
+max_trials=50
 beta=1
 
 #----------------------------------------------------------    
@@ -57,63 +51,55 @@ for trials in range(max_trials):
     
     spin_states=np.random.choice([1, -1], size=(size, size))
     
-    for step in range(steps+100):
+    for step in range(steps+100): 
          
          e=0
          for i in range(size):
             for j in range (size):
-                magnet=magnetisation(spin_states,size)
-                e = U(spin_states, size, i, j,H,magnet)
+                magnet=magnetisation(spin_states,size)   # Find magnetisation
+                e = U(spin_states, size, i, j,H,magnet)  # Find energy
                 if e <= 0:
                     spin_states[i, j] *= -1
                 elif np.exp((-1.0 * e)*beta) > random.random():
                     spin_states[i, j] *= -1
             
           
-         if(step>100):
-             mag[step-100]=magnetisation(spin_states,size)
+         if(step>100): # Production Steps
              magnet=magnetisation(spin_states,size)
+             mag[step-100]=magnet
+             
              for i in range(size):
                     for j in range (size):
                         
                         Energy[step-100]+=round(U(spin_states,size,i,j,H,magnet),2)
                 
     plot_en.append(round(np.mean(Energy),2))
-    values_mag.append(round(np.mean(mag),3))
+    values_mag.append((magnet))
     
-unique,unique_indices,unique_counts=np.unique(values_mag,return_index=1,return_counts=1)  
-x_values=np.arange(-1,1,0.001)
-hist_bins=np.arange(-1,1,0.01)
+hist,bin_edges=np.histogram(values_mag,bins=100,density='True')
 plt.figure(figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
 plt.xlabel('magnetisation')
 plt.ylabel('Frequency')
-plt.title('Histogram for magnetisation at temperature %f'%beta)        
-sns.distplot(values_mag,bins=hist_bins,kde=0)
+plt.title('Histogram for magnetisation at beta %f'%beta)        
+sns.distplot(hist,bins=bin_edges,kde=0)
 
 
-for i in np.arange(-1,1,0.001):
-    if (round(i,3) in unique):
-        prob_mag.append(unique_counts[np.where(unique==round(i,3))][0]/max_trials)
-        
-    else:
-        
-        prob_mag.append(0)
-        
-    
-for i in (prob_mag):
-    if (i!=0) :
-        free_energy.append(-(1/beta)*np.log(i)-Q*i**2)
-    else:
-        free_energy.append(-Q*i**2)
 
-print('Probability magnitude for each magnetisation :',prob_mag)  
-print('Free Energy :',free_energy)  
+F=np.array([-(np.log(i))*(1/beta) for i in hist])  #Free energy
+#Bias potential
+W=np.array([Q*((bin_edges[i+1]-bin_edges[i])/2) for i in range(len(bin_edges)-1)])
+F=F-W
+print (F)
+print (len(bin_edges))
+
+print (bin_edges)
+
 
 plt.figure(figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
 plt.xlabel('magnetisation')
 plt.ylabel('$-kTlogP_i$')
 plt.title('Free Energy surface')        
-plt.plot(x_values,free_energy,'r-',label='Magnetic Field (H): %d \n Beta:%f'%(H,beta))
+sns.distplot(F,bins=bin_edges,label='Magnetic Field (H): %d \n Beta:%f'%(H,beta))
         
 
 
