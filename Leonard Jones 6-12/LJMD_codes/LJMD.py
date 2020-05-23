@@ -16,13 +16,13 @@ from mpl_toolkits.mplot3d import Axes3D
 
 
 # Setting up the simulation
-NSteps   = 3500  # Number of steps
+NSteps   = 4500  # Number of steps
 deltat   = 0.005  # Time step in reduced time units
 temp     = 0.851  #Reduced temperature
 DumpFreq = 100    # Save the position to file every DumpFreq steps
 epsilon  = 1.0    # LJ parameter for the energy between particles
 DIM      = 3
-N        = 500
+N        = 108
 density  = 0.776
 Rcutoff  = 3
 
@@ -109,6 +109,8 @@ def LJ_Forces(pos,acc,epsilon,L,DIM,N):
     # Uses double nested loop which is slow O(N^2) time unsuitable for large systems
     Sij = np.zeros(DIM) # Box scaled units
     Rij = np.zeros(DIM) # Real space units
+    
+    phicutoff = 4.0/(Rcutoff**12)-4.0/(Rcutoff**6)
 
     #Set all variables to zero
     ene_pot = 0
@@ -132,8 +134,8 @@ def LJ_Forces(pos,acc,epsilon,L,DIM,N):
                 rm2      = 1.0/Rsqij # 1/r^2
                 rm6      = rm2**3    # 1/r^6
                 rm12     = rm6**2    # 1/r^12
-                forcefact= rm2*(rm12-0.5*rm6) 
-                phi      = 4*(rm6**2-rm6)
+                forcefact= 48*(rm2*(rm12-0.5*rm6) )
+                phi      = 4*(rm6**2-rm6) - phicutoff
 
                 ene_pot+=phi # Accumulate energy
 
@@ -144,7 +146,7 @@ def LJ_Forces(pos,acc,epsilon,L,DIM,N):
                 acc[j]     = acc[j]-forcefact*Sij # (Fji=-Fij)
     #If you want to get get the best performance, sum directly in the loop intead of 
     #summing at the end np.sum(ene_pot)
-    return 48*acc, (ene_pot)/N, -virial/DIM # return the acceleration vector, potential energy and virial coefficient
+    return acc, (ene_pot)/N, -virial/DIM # return the acceleration vector, potential energy and virial coefficient
 
 
 @jit(nopython=True,error_model="numpy",parallel=True)
@@ -207,8 +209,10 @@ def main(NSteps,production,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,ac
         ene_kin_aver[k],temperature[k] = Calculate_Temperature(vel,L,DIM,N)
 
         # Rescale velocities and take half step
-        chi = np.sqrt(temp/temperature[k])     # For NVT Ensemble
-        #chi  =1                               # For NVE Ensemble
+        if (production==0):
+            chi = np.sqrt(temp/temperature[k])     # For NVT Ensemble
+        else:
+            chi=1                               # For NVE Ensemble
         vel = chi*vel + 0.5*deltat*acc # v(t+dt/2) Step 2
 
         # Compute forces a(t+dt),ene_pot,virial
@@ -240,15 +244,15 @@ def main(NSteps,production,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,ac
 
         #Simple prints without formating are supported
         """
-        if (k%10==0):
-            print("step: ",k,"KE: ",ene_kin_aver[k],"PE :",ene_pot_aver[k],"\n Total Energy: ",ene_kin_aver[k]+ene_pot_aver[k])
+        if (k%200==0):
+            print("step: ",k,"KE: ",ene_kin_aver[k],"PE :",ene_pot_aver[k],"\n Total Energy: ",ene_kin_aver[k]+ene_pot_aver[k],"Equilibrium ? :",production)
             #print("\rStep: {0} KE: {1}   PE: {2} Energy:  {3}".format(k, ene_kin_aver[k], ene_pot_aver[k],ene_kin_aver[k]+ene_pot_aver[k]))
             #sys.stdout.write("\rStep: {0} KE: {1}   PE: {2} Energy:  {3}".format(k, ene_kin_aver[k], ene_pot_aver[k],ene_kin_aver[k]+ene_pot_aver[k]))
             #sys.stdout.flush()
         
         
-    return ene_kin_aver, ene_pot_aver, temperature, pressure, pos, vel,  acc,  dist_sq/N
-    
+    return ene_kin_aver,ene_pot_aver, temperature, pressure, dist_sq/N,pos,vel,acc
+        
 
 
 
@@ -298,6 +302,19 @@ def plot():
     plt.xlabel("simulation time", fontsize=20)
     plt.plot(sim_time,dist_meansq,'-')
     plt.show()
+     #//////////Energy Plot
+    plt.figure(num=6,figsize=[10,6])
+    plt.title ("Energy of particles", fontsize=20)
+    plt.plot(ene_kin_aver,'-',label='Kinetic Energy')
+    plt.plot(ene_pot_aver,'-',label='Potential Energy')
+    plt.plot(ene_pot_aver+ene_kin_aver,'-',label='Total Energy')
+    plt.legend(loc="best")
+    plt.ylabel("$<Eergy>$", fontsize=20)
+    plt.xlabel("step", fontsize=20)
+    
+    plt.show()
+    
+    
 
 
 
@@ -352,8 +369,13 @@ plt.show()
 
 acc = (np.random.randn(N,DIM)-0.5)
 
-ene_kin_aver, ene_pot_aver, temperature, pressure, pos, vel, acc,dist_meansq = main(NSteps,1,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,acc)
-grbin,grhist=rdf(pos,0.1,L/2,L,N)
+# Trial Steps
+ene_kin_aver,ene_pot_aver, temperature, pressure,dist_meansq,pos,vel,acc = main(2000,0,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,acc)
+#Production Step
+ene_kin_aver,ene_pot_aver, temperature, pressure,dist_meansq,pos,vel,acc = main(NSteps,1,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,acc)
+
+
+grbin,grhist=rdf(pos,0.08,L/2,L,N)
 
 print ("Diffusion const. calculated from Einsein Relation : ", dist_meansq/(6*deltat*NSteps))
 sim_time = [k*deltat for k in range(NSteps)]     #Convert step no. to actual time 

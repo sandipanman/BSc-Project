@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sun Apr 12 07:36:45 2020
+Created on Sat May 23 17:50:17 2020
 
 @author: Sandipan
 """
@@ -25,12 +25,11 @@ plt.rcParams['axes.linewidth'] = 2
 # Setting up the simulation
 NSteps   = 4500   # Number of steps
 deltat   = 0.005  # Time step in reduced time units
-temp     = 0.851  #Reduced temperature
-DumpFreq = 100    # Save the position to file every DumpFreq steps
+temp     = 10.0  #Reduced temperature
+DumpFreq = 108    # Save the position to file every DumpFreq steps
 epsilon  = 1.0    # LJ parameter for the energy between particles
 DIM      = 3      # Dimension
 N        = 108
-density  = 0.776  # Density of the fluid
 Rcutoff  = 3      # Cutoff for truncated LJ potential in units of sigma
 
 
@@ -115,18 +114,17 @@ def wrap(pos,L):
 
 
 @jit(nopython=True,error_model="numpy")
-def LJ_Forces(pos,acc,epsilon,L,DIM,N):
+def LJ_Forces(pos,acc,epsilon,L,DIM,N,Rcutoff):
     # Compute forces on positions using the Lennard-Jones potential
     # Uses double nested loop which is slow O(N^2) time unsuitable for large systems
     Sij = np.zeros(DIM) # Box scaled units
     Rij = np.zeros(DIM) # Real space units
-    
-    phicutoff = 4.0/(Rcutoff**12)-4.0/(Rcutoff**6)
 
     #Set all variables to zero
     ene_pot = 0
     acc = acc*0
     virial=0.0
+    phicutoff = 4.0/(Rcutoff**12)-4.0/(Rcutoff**6)
 
     # Loop over all pairs of particles
     for i in range(N-1):
@@ -144,9 +142,8 @@ def LJ_Forces(pos,acc,epsilon,L,DIM,N):
                 # We calculate parts of the LJ potential at a time to improve the efficieny of the computation (most important for compiled code)
                 rm2      = 1.0/Rsqij # 1/r^2
                 rm6      = rm2**3    # 1/r^6
-                rm12     = rm6**2    # 1/r^12
-                forcefact= 48*(rm2*(rm12-0.5*rm6) )
-                phi      = 4*(rm6**2-rm6) - phicutoff
+                forcefact=48*((rm2**4)*(rm6)-0.5*(rm2**4))
+                phi      =4*(rm6**2-rm6) - phicutoff
 
                 ene_pot+=phi # Accumulate energy
 
@@ -228,14 +225,13 @@ def main(NSteps,production,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,ac
         ene_kin_aver[k],temperature[k] = Calculate_Temperature(vel,L,DIM,N)
 
         # Rescale velocities and take half step
-        if (production==0):
-            chi = np.sqrt(temp/temperature[k])     # For NVT Ensemble
-        else:
-            chi=1                               # For NVE Ensemble
+        
+        chi = np.sqrt(temp/temperature[k])     # For NVT Ensemble
+                                      # For NVE Ensemble
         vel = chi*vel + 0.5*deltat*acc # v(t+dt/2) Step 2
 
         # Compute forces a(t+dt),ene_pot,virial
-        acc, ene_pot_aver[k], virial[k] = LJ_Forces(pos,acc,epsilon,L,DIM,N) # Step 3
+        acc, ene_pot_aver[k], virial[k] = LJ_Forces(pos,acc,epsilon,L,DIM,N,Rcutoff) # Step 3
 
         # Complete the velocity step 
         vel = vel + 0.5*deltat*acc # v(t+dt/2) Step 4
@@ -268,10 +264,8 @@ def main(NSteps,production,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,ac
             #print("\rStep: {0} KE: {1}   PE: {2} Energy:  {3}".format(k, ene_kin_aver[k], ene_pot_aver[k],ene_kin_aver[k]+ene_pot_aver[k]))
             #sys.stdout.write("\rStep: {0} KE: {1}   PE: {2} Energy:  {3}".format(k, ene_kin_aver[k], ene_pot_aver[k],ene_kin_aver[k]+ene_pot_aver[k]))
             #sys.stdout.flush()
-        
-   
+
     return ene_kin_aver,ene_pot_aver, temperature, pressure, dist_sq/N,pos,vel,acc
-    
     
 
 
@@ -285,40 +279,23 @@ def plot():
     plt.rc('ytick', labelsize=15)
    
     
-    plt.subplot(5, 1, 1)
-    plt.plot(temp_list, U,'bo',markersize=10)
-    plt.ylabel(r"$E_{Potential Energy }$", fontsize=20,labelpad=10)
-    plt.xlabel(r"${Temperature(Reduced)}$", fontsize=20,labelpad=10)
     
    
     
-    plt.subplot(5, 1, 2)
-    plt.plot(temp_list,P,'bo',markersize=10)
+    plt.subplot(2, 1, 1)
+    plt.plot(density_list,P,'bo',markersize=10)
     plt.ylabel(r"$P$", fontsize=20,labelpad=10)
-    plt.xlabel(r"${Temperature(Reduced)}$", fontsize=20,labelpad=10)
+    plt.xlabel(r"${Density(Reduced)}$", fontsize=20,labelpad=10)
    
     
     
-    plt.subplot(5, 1, 3)
-    plt.plot(temp_list,D,'bo',markersize=10)
+    plt.subplot(2, 1, 2)
+    plt.plot(density_list,D,'bo',markersize=10)
     plt.ylabel(r"$Einstein Coeff$", fontsize=20,labelpad=10)
     plt.xlabel(r"${Temperature(Reduced)}$", fontsize=20,labelpad=10)
     
    
-    
-    plt.subplot(5, 1, 4)
-    plt.plot(temp_list,Cv,'bo',markersize=10)
-    plt.ylabel(r"$Specific Heat $", fontsize=20,labelpad=10)
-    plt.xlabel(r"${Temperature(Reduced)}$", fontsize=20,labelpad=10)
-    
-    
-    
-    plt.subplot(5, 1, 5)
-    plt.plot(temp_list,tot_en,'bo',markersize=10)
-    plt.ylabel(r"$Total Energy $", fontsize=20,labelpad=10)
-    plt.xlabel(r"${Temperature(Reduced)}$", fontsize=20,labelpad=10)
-    
-    plt.tight_layout()
+
 
     
     
@@ -360,14 +337,13 @@ def rdf(pos,grdelta,rmax,L,N):         # Radial distribution function
         
 #------------------------------------------------------    
 
-K =[]
-U =[]
+
 P =[]
 T =[]
 D =[]
-Cv=[]
 
-temp_list = [1.5,2.5]
+
+density_list = np.arange(0.1,1,0.1)
 
 fig0, ax0=plt.subplots(figsize=(12,8))
 plt.title("Radial Distribution function", fontsize=20)
@@ -379,50 +355,42 @@ plt.title ("Mean square displacement of particles", fontsize=20)
 ax1.set_ylabel("$<r^2>$", fontsize=20)
 ax1.set_xlabel("simulation time", fontsize=20)
 
-for temp in temp_list :
+for density in density_list :
     
-    print ('Current temperature : ' ,temp)
+    print ('Current temperature : ' ,temp,'Current density : ',density)
     pos,vel,L         = initialise_config(N,DIM,density)        #Initialise the setup
     acc = (np.random.randn(N,DIM)-0.5)
+    
     
     # Trial Steps
     ene_kin_aver,ene_pot_aver, temperature, pressure,dist_meansq,pos,vel,acc = main(2000,0,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,acc)
     #Production Step
     ene_kin_aver,ene_pot_aver, temperature, pressure,dist_meansq,pos,vel,acc = main(NSteps,1,deltat,temp,DumpFreq,epsilon,DIM,N,Rcutoff,pos,vel,acc)
-
     einstein_coeff = dist_meansq/(6*deltat*NSteps)
     
     
-    K.append(np.mean(ene_kin_aver))
-    U.append(np.mean(ene_pot_aver))
+    
     P.append(np.mean(pressure))
     T.append(np.mean(temperature))
     D.append(np.mean(einstein_coeff))
-    Cv.append((np.var(ene_pot_aver))/temp**2)
+    
 
-    grbin,grhist=rdf(pos,0.1,L/2,L,N)
+    grbin,grhist=rdf(pos,0.05,L/2,L,N)
     sim_time = [k*deltat for k in range(NSteps)]
     
    
-    ax0.plot(grbin,grhist,'-',label='Temp %.1f'%temp)
-    ax1.plot(sim_time,dist_meansq,'-',label='Temp %.1f'%temp)    #Mean square displacemment Plot
+    ax0.plot(grbin,grhist,'-',label='Density %.1f'%density)
+    ax1.plot(sim_time,dist_meansq,'-',label='Denity %.1f'%density)    #Mean square displacemment Plot
     
    
-with open("sp_heat.txt",'ab') as f:
-    data = np.column_stack((temp_list, Cv))
-    np.savetxt(f, data)
     
-with open("kin_en.txt",'ab') as f:
-    data = np.column_stack((temp_list, K))
+
+
+with open("Pressure2.txt",'ab') as f:
+    data = np.column_stack((density_list, P))
     np.savetxt(f, data)
-with open("Energy.txt",'ab') as f:
-    data = np.column_stack((temp_list, U))
-    np.savetxt(f, data)
-with open("Pressure.txt",'ab') as f:
-    data = np.column_stack((temp_list, P))
-    np.savetxt(f, data)
-with open("Diffusion.txt",'ab') as f:
-    data = np.column_stack((temp_list, D))
+with open("Diffusion2.txt",'ab') as f:
+    data = np.column_stack((density_list, D))
     np.savetxt(f, data)
 
   
@@ -434,7 +402,7 @@ plt.show()
 plt.show()
 
 
-tot_en=list( map(add, U, K) )
+
 # Plot all of the quantities
 
 
