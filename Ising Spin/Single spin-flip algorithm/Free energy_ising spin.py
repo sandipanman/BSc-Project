@@ -6,102 +6,133 @@ Created on Mon Mar  9 12:50:16 2020
 """
 
 
-
+import numba as nb
 import numpy as np
-import random
 import matplotlib.pyplot as plt
-import seaborn as sns
 
-def find_neighbours(spin_states,size,x,y):
-    left=spin_states[x,y-1]
-    right=spin_states[x,(y+1)%size]
-    top=spin_states[x-1,y]
-    bottom=spin_states[(x+1)%size,y]
-    tot_spin=left+right+top+bottom 
+
+@nb.njit(error_model="numpy")
+def deltanrg(spin_states,i,j,k,H,Q):
     
-    return (tot_spin)
+    size= len(spin_states)
 
-def magnetisation(spin_states,size):
-    return np.sum(spin_states)/size**2
+    #Find the nearest neighbours
+    nbr=(spin_states[i,j-1,k]+spin_states[i,(j+1)%size,k]+spin_states[i-1,j,k]+
+        spin_states[(i+1)%size,j,k]+spin_states[i,j,k-1]+spin_states[i,j,(k+1)%size])
+   
+    m_old = np.mean(spin_states)
+    energy=2*spin_states[i,j,k]*nbr+2*H*spin_states[i,j,k] #Change in energy due to spin flip
+    
+    spin_states[i, j, k] *= -1
+    m_new = np.mean(spin_states)
+    
+    energy=energy+Q*((m_new)**2-(m_old)**2)  #Correction to include change inbias effect
+    
+    return energy
 
-def U(spin_states,size,x,y,H,m):
-    return spin_states[x,y]*(find_neighbours(spin_states,size,x,y))-H*(np.sum(spin_states))+Q*((m)**2)
+
+
+
+@nb.njit()
+def mc_ising(size,num_steps,H,kT,Q):
+    values_mag=[]
+    
+    
+    spin_states=np.ones((size,size,size))
+    nspins = size*size*size
+    
+    for step in range(num_steps): 
+        for _ in range (nspins): 
+            i=np.random.randint(size)
+            j=np.random.randint(size)
+            k=np.random.randint(size)
+    
+             
+            dE=deltanrg(spin_states,i,j,k,H,Q) # Find initial configuration energy
+            if np.exp((-1.0 * dE)/kT) < np.random.random():
+                spin_states[i, j, k] *= -1             #FlipRejected
+                
+      
+        magnet = np.mean(spin_states)
+        values_mag.append(magnet)
+    
+    return values_mag
+
 
 #------------------Simulation Parameters--------------------
-Q=0
-size=5
-steps=10
-H=0
-max_trials=50
-beta=1
+Q = 0
+size=10
+num_steps=100000
+H=0.01
+num_bins=50
+
 
 #----------------------------------------------------------    
 
-plot_en=[]
-prob_mag=[]
-values_mag=[]
-mag=np.zeros([steps])
-Energy=np.zeros([steps])
-free_energy=[]
-spin_states=(np.ones([size,size]))
-
-
-
-for trials in range(max_trials):
     
-    spin_states=np.random.choice([1, -1], size=(size, size))
-    
-    for step in range(steps+100): 
-         
-         e=0
-         for i in range(size):
-            for j in range (size):
-                magnet=magnetisation(spin_states,size)   # Find magnetisation
-                e = U(spin_states, size, i, j,H,magnet)  # Find energy
-                if e <= 0:
-                    spin_states[i, j] *= -1
-                elif np.exp((-1.0 * e)*beta) > random.random():
-                    spin_states[i, j] *= -1
-            
-          
-         if(step>100): # Production Steps
-             magnet=magnetisation(spin_states,size)
-             mag[step-100]=magnet
-             
-             for i in range(size):
-                    for j in range (size):
-                        
-                        Energy[step-100]+=round(U(spin_states,size,i,j,H,magnet),2)
-                
-    plot_en.append(round(np.mean(Energy),2))
-    values_mag.append((magnet))
-    
-hist,bin_edges=np.histogram(values_mag,bins=100,density='True')
-plt.figure(figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
-plt.xlabel('magnetisation')
-plt.ylabel('Frequency')
-plt.title('Histogram for magnetisation at beta %f'%beta)        
-sns.distplot(hist,bins=bin_edges,kde=0)
+for kT in  ([4.4]):
 
 
-
-F=np.array([-(np.log(i))*(1/beta) for i in hist])  #Free energy
-#Bias potential
-W=np.array([Q*((bin_edges[i+1]-bin_edges[i])/2) for i in range(len(bin_edges)-1)])
-F=F-W
-print (F)
-print (len(bin_edges))
-
-print (bin_edges)
-
-
-plt.figure(figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
-plt.xlabel('magnetisation')
-plt.ylabel('$-kTlogP_i$')
-plt.title('Free Energy surface')        
-sns.distplot(F,bins=bin_edges,label='Magnetic Field (H): %d \n Beta:%f'%(H,beta))
+    values_mag =mc_ising(size,num_steps,H,kT,Q)   
+    histo,bin_edges=np.histogram(values_mag,bins=num_bins,density=1)
+    """
+    plt.figure(num=0,figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
+    plt.xlabel('magnetisation')
+    plt.ylabel('Frequency')
+    plt.title('Histogram for magnetisation at kT %.1f H %.1f'%(kT,H))        
+    plt.hist(values_mag,bins=num_bins)
+    """
         
+    
+    
+    
+    # Array of meean magnetusation in each bin
+    mean_mag =[(bin_edges[i+1]-bin_edges[i])/2 for i in range(len(bin_edges)-1)] 
+    #Bias potential
+    W=np.array([Q*i**2 for i in mean_mag])
+    
+    F_corrected=[]
+    F=[]
+    
+    for i in range(len(W)):
+        if histo[i]!=0: 
+    
+            f= -kT * np.log(histo[i]) 
+            F.append(f)                    #Free energy without bias correction
+            F_corrected.append( f - W[i] ) #Correction for bias potential
+    
+    
+    plt.figure(num=1,figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
+    plt.xlabel('magnetisation')
+    plt.ylabel('$-kTlogP_i$')
+    plt.title("Free Energy surface with biasing F'(Q= %d)"%Q)        
+    plt.plot(bin_edges[:-1][histo != 0],F, "o-",label = 'kT %.1f H %.3f'%(kT,H))
+    
+    plt.legend(loc="best")
+    plt.show()
+    
+    
+    
+    
 
+    plt.figure(num=2,figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
+    plt.xlabel('magnetisation')
+    plt.ylabel('$-kTlogP_i$')
+    plt.title("Free Energy surface with biasing and correction F=F'-w (Q= %d)"%Q)        
+    plt.plot(bin_edges[:-1][histo != 0],F_corrected, "bo-",label = 'kT %.1f H %.1f'%(kT,H))
+    plt.legend(loc="best")
+    plt.show()
+
+"""    
+    plt.figure(num=3,figsize=(6,4))
+    plt.xlabel('magnetisation')
+    plt.ylabel('W')
+    plt.title('W(m)')
+    m=np.arange(-1,1,0.01)
+    W=[Q*i**2 for i in m]
+    plt.plot(m,W,'bo')
+           
+ """
 
 
             
