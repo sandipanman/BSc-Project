@@ -63,14 +63,17 @@ def mc_ising(size,num_steps,H,kT,Q):
 Q = 0
 size=10
 num_steps=100000
-H=0.01
+H=0.3
 num_bins=50
 
 
 #----------------------------------------------------------    
+plt.figure(num=1,figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
+plt.xlabel('magnetisation')
+plt.ylabel('$-kTlogP_i$')
 
     
-for kT in  ([4.4]):
+for kT in  ([4.6]):
 
 
     values_mag =mc_ising(size,num_steps,H,kT,Q)   
@@ -87,9 +90,11 @@ for kT in  ([4.4]):
     
     
     # Array of meean magnetusation in each bin
-    mean_mag =[(bin_edges[i+1]-bin_edges[i])/2 for i in range(len(bin_edges)-1)] 
+    mean_mag =[(bin_edges[i+1]+bin_edges[i])/2 for i in range(len(bin_edges)-1)] 
     #Bias potential
+    
     W=np.array([Q*i**2 for i in mean_mag])
+    print(W)
     
     F_corrected=[]
     F=[]
@@ -100,16 +105,17 @@ for kT in  ([4.4]):
             f= -kT * np.log(histo[i]) 
             F.append(f)                    #Free energy without bias correction
             F_corrected.append( f - W[i] ) #Correction for bias potential
+          
+   
+    F_corrected=np.array(F_corrected)
+    F_corrected=F_corrected -(np.nanmin(F_corrected, axis=0))
     
+            
+           
+    #plt.plot(bin_edges[:-1][histo != 0],-kT * np.log(histo[histo != 0]), "o-",label = 'kT %.1f'%(kT))
     
-    plt.figure(num=1,figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
-    plt.xlabel('magnetisation')
-    plt.ylabel('$-kTlogP_i$')
-    plt.title("Free Energy surface with biasing F'(Q= %d)"%Q)        
-    plt.plot(bin_edges[:-1][histo != 0],F, "o-",label = 'kT %.1f H %.3f'%(kT,H))
-    
-    plt.legend(loc="best")
-    plt.show()
+    #plt.legend(loc="best")
+    #plt.show()
     
     
     
@@ -118,21 +124,11 @@ for kT in  ([4.4]):
     plt.figure(num=2,figsize=(6,4),dpi=80, facecolor='w', edgecolor='b')
     plt.xlabel('magnetisation')
     plt.ylabel('$-kTlogP_i$')
-    plt.title("Free Energy surface with biasing and correction F=F'-w (Q= %d)"%Q)        
+    plt.title("Free Energy surface sampled external field %d "%Q)        
     plt.plot(bin_edges[:-1][histo != 0],F_corrected, "bo-",label = 'kT %.1f H %.1f'%(kT,H))
     plt.legend(loc="best")
     plt.show()
 
-"""    
-    plt.figure(num=3,figsize=(6,4))
-    plt.xlabel('magnetisation')
-    plt.ylabel('W')
-    plt.title('W(m)')
-    m=np.arange(-1,1,0.01)
-    W=[Q*i**2 for i in m]
-    plt.plot(m,W,'bo')
-           
- """
 
 
             
